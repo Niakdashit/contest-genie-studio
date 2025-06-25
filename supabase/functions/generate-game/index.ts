@@ -17,7 +17,10 @@ serve(async (req) => {
     const apiKey = Deno.env.get('GAME_GENERATION_API_KEY');
 
     if (!apiKey) {
-      throw new Error('API key not configured');
+      return new Response(JSON.stringify({ error: 'Clé API manquante' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     console.log('🚀 API Key found, starting game generation...');
