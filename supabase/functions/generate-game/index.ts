@@ -119,23 +119,41 @@ Le jeu doit refléter à 100% l'identité visuelle et le ton de la marque. Adapt
 async function fetchBrandData(brandUrl: string) {
   try {
     // Extraction du domaine
-    const domain = brandUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-    
-    // Tentative avec Brandfetch API (nécessiterait une clé API)
-    // Pour cette démonstration, on simule une récupération intelligente
-    
-    // Analyse basique du domaine pour extraire des informations
-    const brandName = domain.split('.')[0];
-    
-    // Logique de détection de secteur basée sur le nom/domaine
-    const industryDetection = detectIndustry(brandName, domain);
-    
+    const domain = brandUrl
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .split('/')[0];
+
+    const apiKey = Deno.env.get('BRANDFETCH_API_KEY');
+    let data: any = null;
+
+    if (apiKey) {
+      const res = await fetch(`https://api.brandfetch.io/v2/brands/${domain}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.ok) {
+        data = await res.json();
+      }
+    }
+
+    const name =
+      data?.name || domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
+    const colors =
+      data?.brandColors?.map((c: any) => c.hex) ||
+      data?.colors?.map((c: any) => c.hex) ||
+      [];
+    const logo =
+      data?.logos?.[0]?.formats?.find((f: any) => f.format === 'png')?.src ||
+      data?.logos?.[0]?.src ||
+      null;
+
+    const industryDetection = detectIndustry(name.toLowerCase(), domain);
     return {
-      name: brandName.charAt(0).toUpperCase() + brandName.slice(1),
-      colors: industryDetection.colors,
-      industry: industryDetection.sector,
+      name,
+      colors: colors.length ? colors.slice(0, 3) : industryDetection.colors,
+      industry: data?.industry || industryDetection.sector,
       tone: industryDetection.tone,
-      logo: null // Serait récupéré via API réelle
+      logo,
     };
   } catch (error) {
     console.warn('Brand data fetch failed:', error);
