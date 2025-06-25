@@ -8,8 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Palette, Upload, Globe, CheckCircle, AlertCircle } from 'lucide-react';
 import { GamePreview } from './GamePreview';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+const API_KEY = import.meta.env.VITE_API_KEY;
 
 interface GameConfig {
   prompt: string;
@@ -101,7 +102,7 @@ export const GameGenerator = () => {
         description: "Appel de l'API en cours...",
       });
 
-      console.log('📡 Appel de la fonction Edge avec configuration complète:', {
+      console.log('📡 Appel du backend avec configuration complète:', {
         hasPrompt: !!configWithFiles.prompt,
         hasBrandUrl: !!configWithFiles.brandUrl,
         hasGameType: !!configWithFiles.gameType,
@@ -110,15 +111,41 @@ export const GameGenerator = () => {
         dominantColor: configWithFiles.dominantColor
       });
 
-      // Appel DIRECT à l'API via la fonction Edge
-      const { data, error } = await supabase.functions.invoke('generate-game', {
-        body: { config: configWithFiles }
+      if (!API_KEY) {
+        toast({
+          title: 'Erreur',
+          description: "Clé API manquante.",
+          variant: 'destructive'
+        });
+        setIsGenerating(false);
+        return;
+      }
+
+      const formData = {
+        prompt: configWithFiles.prompt,
+        brandUrl: configWithFiles.brandUrl,
+        gameType: configWithFiles.gameType,
+        dominantColor: configWithFiles.dominantColor,
+        logo: configWithFiles.logo,
+        backgroundImage: configWithFiles.backgroundImage
+      };
+
+      const response = await fetch('https://your-backend-endpoint/api/generate', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
       });
 
-      if (error) {
-        console.error('❌ Erreur lors de l\'appel API:', error);
-        throw error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Erreur lors de l\'appel API:', errorText);
+        throw new Error(errorText);
       }
+
+      const data = await response.json();
 
       console.log('✅ Réponse API reçue:', data);
 
