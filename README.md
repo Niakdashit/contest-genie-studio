@@ -32,7 +32,10 @@ cd <YOUR_PROJECT_NAME>
 # Step 3: Install the necessary dependencies.
 npm i
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Step 4: Copy the example environment variables and set your Supabase keys.
+cp .env.example .env
+# Edit `.env` and provide values for `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+# Step 5: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
