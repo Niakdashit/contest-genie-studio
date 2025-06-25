@@ -144,13 +144,14 @@ export const GameGenerator = () => {
         body: JSON.stringify(formData)
       });
 
+      const responseData = await response.json();
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Erreur lors de l\'appel API:', errorText);
-        throw new Error(errorText);
+        console.error('❌ Erreur lors de l\'appel API:', responseData);
+        throw new Error(responseData.error || 'Erreur inconnue');
       }
 
-      const data = await response.json();
+      const data = responseData;
 
       console.log('✅ Réponse API reçue:', data);
       console.log('✅ API called successfully');
@@ -177,9 +178,10 @@ export const GameGenerator = () => {
 
     } catch (error) {
       console.error('❌ Erreur lors de la génération:', error);
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
       toast({
         title: 'Erreur',
-        description: 'Impossible de générer le jeu. Vérifiez la console pour plus de détails.',
+        description: message,
         variant: 'destructive',
       })
     } finally {
