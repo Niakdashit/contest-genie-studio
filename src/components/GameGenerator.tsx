@@ -63,12 +63,13 @@ export const GameGenerator = () => {
 
   const handleGenerate = async () => {
     if (!config.prompt.trim()) {
+      console.warn(`⚠️ Missing required field: prompt`)
       toast({
         title: "Erreur",
         description: "Veuillez saisir une description de votre jeu concours",
-        variant: "destructive"
-      });
-      return;
+        variant: "destructive",
+      })
+      return
     }
     
     setIsGenerating(true);
@@ -76,6 +77,10 @@ export const GameGenerator = () => {
     
     try {
       console.log('🚀 Démarrage de la génération du jeu...');
+
+      if (config.brandUrl) {
+        console.log(`🔁 Fetching branding from ${config.brandUrl}`)
+      }
       
       // Conversion des fichiers uploadés
       let logoDataUrl = '';
@@ -98,9 +103,9 @@ export const GameGenerator = () => {
       };
 
       toast({
-        title: "Génération en cours",
+        title: 'En cours…',
         description: "Appel de l'API en cours...",
-      });
+      })
 
       console.log('📡 Appel du backend avec configuration complète:', {
         hasPrompt: !!configWithFiles.prompt,
@@ -148,6 +153,7 @@ export const GameGenerator = () => {
       const data = await response.json();
 
       console.log('✅ Réponse API reçue:', data);
+      console.log('✅ API called successfully');
 
       // Log de génération
       const log: GenerationLog = {
@@ -162,9 +168,9 @@ export const GameGenerator = () => {
       setShowPreview(true);
 
       toast({
-        title: "Jeu généré avec succès !",
+        title: 'Succès',
         description: `API appelée: ${log.apiCalled ? '✅' : '❌'} | Branding récupéré: ${log.brandDataRetrieved ? '✅' : '❌'}`,
-      });
+      })
 
       console.log('🎯 Génération terminée avec succès !');
       console.log('📊 Statistiques:', log);
@@ -172,10 +178,10 @@ export const GameGenerator = () => {
     } catch (error) {
       console.error('❌ Erreur lors de la génération:', error);
       toast({
-        title: "Erreur de génération",
-        description: "Impossible de générer le jeu. Vérifiez la console pour plus de détails.",
-        variant: "destructive"
-      });
+        title: 'Erreur',
+        description: 'Impossible de générer le jeu. Vérifiez la console pour plus de détails.',
+        variant: 'destructive',
+      })
     } finally {
       setIsGenerating(false);
     }
