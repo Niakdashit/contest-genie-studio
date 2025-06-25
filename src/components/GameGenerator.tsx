@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Palette, Upload, Globe, Key } from 'lucide-react';
+import { Sparkles, Palette, Upload, Globe } from 'lucide-react';
 import { GamePreview } from './GamePreview';
+import { supabase } from '@/integrations/supabase/client';
 
 interface GameConfig {
   prompt: string;
@@ -15,7 +16,6 @@ interface GameConfig {
   dominantColor: string;
   backgroundImage: File | null;
   logo: File | null;
-  apiKey: string;
 }
 
 export const GameGenerator = () => {
@@ -25,8 +25,7 @@ export const GameGenerator = () => {
     gameType: '',
     dominantColor: '#3B82F6',
     backgroundImage: null,
-    logo: null,
-    apiKey: ''
+    logo: null
   });
 
   const [generatedGame, setGeneratedGame] = useState<any>(null);
@@ -47,30 +46,41 @@ export const GameGenerator = () => {
   };
 
   const handleGenerate = async () => {
-    if (!config.prompt.trim() || !config.apiKey.trim()) return;
+    if (!config.prompt.trim()) return;
     
     setIsGenerating(true);
     
-    // Simulation de génération IA
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Convert uploaded files to data URLs for preview
-    let logoDataUrl = '';
-    let backgroundDataUrl = '';
-    
-    if (config.logo) {
-      logoDataUrl = await convertFileToDataUrl(config.logo);
+    try {
+      // Convert uploaded files to data URLs for preview
+      let logoDataUrl = '';
+      let backgroundDataUrl = '';
+      
+      if (config.logo) {
+        logoDataUrl = await convertFileToDataUrl(config.logo);
+      }
+      
+      if (config.backgroundImage) {
+        backgroundDataUrl = await convertFileToDataUrl(config.backgroundImage);
+      }
+
+      // Call the edge function to generate the game
+      const { data, error } = await supabase.functions.invoke('generate-game', {
+        body: { config: { ...config, logo: logoDataUrl, backgroundImage: backgroundDataUrl } }
+      });
+
+      if (error) throw error;
+
+      setGeneratedGame(data.gameData);
+      setShowPreview(true);
+    } catch (error) {
+      console.error('Error generating game:', error);
+      // Fallback to local generation if API fails
+      const gameData = generateGameFromPrompt({ ...config, logo: await convertFileToDataUrl(config.logo || new File([], '')), backgroundImage: await convertFileToDataUrl(config.backgroundImage || new File([], '')) });
+      setGeneratedGame(gameData);
+      setShowPreview(true);
+    } finally {
+      setIsGenerating(false);
     }
-    
-    if (config.backgroundImage) {
-      backgroundDataUrl = await convertFileToDataUrl(config.backgroundImage);
-    }
-    
-    // Génération du jeu basée sur le prompt
-    const gameData = generateGameFromPrompt({ ...config, logo: logoDataUrl, backgroundImage: backgroundDataUrl });
-    setGeneratedGame(gameData);
-    setShowPreview(true);
-    setIsGenerating(false);
   };
 
   const generateGameFromPrompt = (config: any): any => {
@@ -214,20 +224,6 @@ export const GameGenerator = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="apiKey" className="text-sm font-medium flex items-center gap-2">
-                  <Key className="h-4 w-4" />
-                  Clé API *
-                </Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="Entrez votre clé API"
-                  value={config.apiKey}
-                  onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="brandUrl" className="text-sm font-medium flex items-center gap-2">
                   <Globe className="h-4 w-4" />
                   URL de la marque
@@ -325,7 +321,7 @@ export const GameGenerator = () => {
 
             <Button
               onClick={handleGenerate}
-              disabled={!config.prompt.trim() || !config.apiKey.trim() || isGenerating}
+              disabled={!config.prompt.trim() || isGenerating}
               className="w-full bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-3 text-lg"
             >
               {isGenerating ? (
