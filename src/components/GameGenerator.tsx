@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Palette, Upload, Globe } from 'lucide-react';
+import { Sparkles, Palette, Upload, Globe, CheckCircle, AlertCircle } from 'lucide-react';
 import { GamePreview } from './GamePreview';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface GameConfig {
   prompt: string;
@@ -16,6 +18,13 @@ interface GameConfig {
   dominantColor: string;
   backgroundImage: File | null;
   logo: File | null;
+}
+
+interface GenerationLog {
+  apiCalled: boolean;
+  brandDataRetrieved: boolean;
+  allInputsUsed: boolean;
+  timestamp: string;
 }
 
 export const GameGenerator = () => {
@@ -31,9 +40,15 @@ export const GameGenerator = () => {
   const [generatedGame, setGeneratedGame] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [generationLog, setGenerationLog] = useState<GenerationLog | null>(null);
+  const { toast } = useToast();
 
   const handleFileUpload = (file: File, type: 'logo' | 'backgroundImage') => {
     setConfig({ ...config, [type]: file });
+    toast({
+      title: "Fichier uploadé",
+      description: `${type === 'logo' ? 'Logo' : 'Image de fond'} ajouté avec succès`,
+    });
   };
 
   const convertFileToDataUrl = (file: File): Promise<string> => {
@@ -46,147 +61,97 @@ export const GameGenerator = () => {
   };
 
   const handleGenerate = async () => {
-    if (!config.prompt.trim()) return;
+    if (!config.prompt.trim()) {
+      toast({
+        title: "Erreur",
+        description: "Veuillez saisir une description de votre jeu concours",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setIsGenerating(true);
+    setGenerationLog(null);
     
     try {
-      // Convert uploaded files to data URLs for preview
+      console.log('🚀 Démarrage de la génération du jeu...');
+      
+      // Conversion des fichiers uploadés
       let logoDataUrl = '';
       let backgroundDataUrl = '';
       
       if (config.logo) {
         logoDataUrl = await convertFileToDataUrl(config.logo);
+        console.log('📷 Logo converti en base64');
       }
       
       if (config.backgroundImage) {
         backgroundDataUrl = await convertFileToDataUrl(config.backgroundImage);
+        console.log('🖼️ Image de fond convertie en base64');
       }
 
-      // Call the edge function to generate the game
-      const { data, error } = await supabase.functions.invoke('generate-game', {
-        body: { config: { ...config, logo: logoDataUrl, backgroundImage: backgroundDataUrl } }
+      const configWithFiles = {
+        ...config,
+        logo: logoDataUrl,
+        backgroundImage: backgroundDataUrl
+      };
+
+      toast({
+        title: "Génération en cours",
+        description: "Appel de l'API en cours...",
       });
 
-      if (error) throw error;
+      console.log('📡 Appel de la fonction Edge avec configuration complète:', {
+        hasPrompt: !!configWithFiles.prompt,
+        hasBrandUrl: !!configWithFiles.brandUrl,
+        hasGameType: !!configWithFiles.gameType,
+        hasLogo: !!configWithFiles.logo,
+        hasBackground: !!configWithFiles.backgroundImage,
+        dominantColor: configWithFiles.dominantColor
+      });
 
+      // Appel DIRECT à l'API via la fonction Edge
+      const { data, error } = await supabase.functions.invoke('generate-game', {
+        body: { config: configWithFiles }
+      });
+
+      if (error) {
+        console.error('❌ Erreur lors de l\'appel API:', error);
+        throw error;
+      }
+
+      console.log('✅ Réponse API reçue:', data);
+
+      // Log de génération
+      const log: GenerationLog = {
+        apiCalled: data.debug?.apiCalled || false,
+        brandDataRetrieved: data.debug?.brandDataRetrieved || false,
+        allInputsUsed: data.debug?.allInputsUsed || false,
+        timestamp: new Date().toLocaleString()
+      };
+
+      setGenerationLog(log);
       setGeneratedGame(data.gameData);
       setShowPreview(true);
+
+      toast({
+        title: "Jeu généré avec succès !",
+        description: `API appelée: ${log.apiCalled ? '✅' : '❌'} | Branding récupéré: ${log.brandDataRetrieved ? '✅' : '❌'}`,
+      });
+
+      console.log('🎯 Génération terminée avec succès !');
+      console.log('📊 Statistiques:', log);
+
     } catch (error) {
-      console.error('Error generating game:', error);
-      // Fallback to local generation if API fails
-      const gameData = generateGameFromPrompt({ ...config, logo: await convertFileToDataUrl(config.logo || new File([], '')), backgroundImage: await convertFileToDataUrl(config.backgroundImage || new File([], '')) });
-      setGeneratedGame(gameData);
-      setShowPreview(true);
+      console.error('❌ Erreur lors de la génération:', error);
+      toast({
+        title: "Erreur de génération",
+        description: "Impossible de générer le jeu. Vérifiez la console pour plus de détails.",
+        variant: "destructive"
+      });
     } finally {
       setIsGenerating(false);
     }
-  };
-
-  const generateGameFromPrompt = (config: any): any => {
-    const prompt = config.prompt.toLowerCase();
-    
-    // Détection intelligente du type de jeu
-    let gameType = config.gameType;
-    if (!gameType) {
-      if (prompt.includes('roue') || prompt.includes('wheel') || prompt.includes('fortune')) {
-        gameType = 'wheel';
-      } else if (prompt.includes('gratter') || prompt.includes('scratch') || prompt.includes('carte')) {
-        gameType = 'scratch';
-      } else if (prompt.includes('quiz') || prompt.includes('question') || prompt.includes('réponse')) {
-        gameType = 'quiz';
-      } else {
-        gameType = 'wheel'; // Default
-      }
-    }
-
-    // Génération du contenu basé sur le prompt
-    const brandName = extractBrandName(config.brandUrl || config.prompt);
-    const theme = extractTheme(prompt);
-    
-    return {
-      type: gameType,
-      theme,
-      brandName,
-      colors: {
-        primary: config.dominantColor,
-        secondary: adjustColor(config.dominantColor, -20),
-        accent: adjustColor(config.dominantColor, 40)
-      },
-      content: generateGameContent(gameType, theme, brandName),
-      logo: config.logo,
-      backgroundImage: config.backgroundImage
-    };
-  };
-
-  const extractBrandName = (text: string): string => {
-    const urlMatch = text.match(/(?:https?:\/\/)?(?:www\.)?([^\/\s]+)/);
-    if (urlMatch) {
-      return urlMatch[1].split('.')[0];
-    }
-    
-    const brandWords = text.match(/\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\b/g);
-    return brandWords?.[0] || 'Votre Marque';
-  };
-
-  const extractTheme = (prompt: string): string => {
-    if (prompt.includes('sport') || prompt.includes('dynamique') || prompt.includes('énergie')) return 'sport';
-    if (prompt.includes('noël') || prompt.includes('festif') || prompt.includes('hiver')) return 'christmas';
-    if (prompt.includes('été') || prompt.includes('soleil') || prompt.includes('plage')) return 'summer';
-    if (prompt.includes('luxe') || prompt.includes('premium') || prompt.includes('élégant')) return 'luxury';
-    if (prompt.includes('cosy') || prompt.includes('café') || prompt.includes('chaleureux')) return 'cozy';
-    return 'modern';
-  };
-
-  const generateGameContent = (type: string, theme: string, brandName: string) => {
-    switch (type) {
-      case 'wheel':
-        return {
-          title: `Roue de la Fortune ${brandName}`,
-          prizes: [
-            '🎁 Cadeau Surprise',
-            '🏆 Grand Prix',
-            '🎯 Bon de Réduction 20%',
-            '⭐ Produit Gratuit',
-            '🎪 Tentez encore',
-            '💎 Offre Exclusive',
-            '🎨 Pack Découverte',
-            '🚀 Avantage VIP'
-          ]
-        };
-      case 'scratch':
-        return {
-          title: `Carte à Gratter ${brandName}`,
-          winMessage: '🎉 Félicitations ! Vous avez gagné !',
-          loseMessage: '😔 Pas de chance cette fois...'
-        };
-      case 'quiz':
-        return {
-          title: `Quiz ${brandName}`,
-          questions: [
-            {
-              question: `Depuis quand ${brandName} vous accompagne ?`,
-              answers: ['Moins d\'un an', '1-3 ans', '3-5 ans', 'Plus de 5 ans'],
-              correct: 0
-            },
-            {
-              question: `Quel est votre produit ${brandName} préféré ?`,
-              answers: ['Le classique', 'La nouveauté', 'Le premium', 'Tous !'],
-              correct: 3
-            }
-          ]
-        };
-      default:
-        return {};
-    }
-  };
-
-  const adjustColor = (hex: string, amount: number): string => {
-    const num = parseInt(hex.replace('#', ''), 16);
-    const r = Math.max(0, Math.min(255, (num >> 16) + amount));
-    const g = Math.max(0, Math.min(255, (num >> 8 & 0x00FF) + amount));
-    const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
-    return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
   };
 
   return (
@@ -226,7 +191,7 @@ export const GameGenerator = () => {
               <div className="space-y-2">
                 <Label htmlFor="brandUrl" className="text-sm font-medium flex items-center gap-2">
                   <Globe className="h-4 w-4" />
-                  URL de la marque
+                  URL de la marque (branding automatique)
                 </Label>
                 <Input
                   id="brandUrl"
@@ -234,6 +199,9 @@ export const GameGenerator = () => {
                   value={config.brandUrl}
                   onChange={(e) => setConfig({ ...config, brandUrl: e.target.value })}
                 />
+                <p className="text-xs text-gray-500">
+                  Récupération automatique du logo, couleurs et ton de la marque
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -277,7 +245,7 @@ export const GameGenerator = () => {
               <div className="space-y-2">
                 <Label htmlFor="logo" className="text-sm font-medium flex items-center gap-2">
                   <Upload className="h-4 w-4" />
-                  Logo
+                  Logo personnalisé (écrase le logo automatique)
                 </Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -291,7 +259,10 @@ export const GameGenerator = () => {
                     className="flex-1"
                   />
                   {config.logo && (
-                    <span className="text-sm text-green-600">✓ {config.logo.name}</span>
+                    <span className="text-sm text-green-600 flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" />
+                      {config.logo.name}
+                    </span>
                   )}
                 </div>
               </div>
@@ -299,7 +270,7 @@ export const GameGenerator = () => {
               <div className="space-y-2">
                 <Label htmlFor="background" className="text-sm font-medium flex items-center gap-2">
                   <Upload className="h-4 w-4" />
-                  Image de fond
+                  Image de fond personnalisée
                 </Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -313,7 +284,10 @@ export const GameGenerator = () => {
                     className="flex-1"
                   />
                   {config.backgroundImage && (
-                    <span className="text-sm text-green-600">✓ {config.backgroundImage.name}</span>
+                    <span className="text-sm text-green-600 flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" />
+                      {config.backgroundImage.name}
+                    </span>
                   )}
                 </div>
               </div>
@@ -338,6 +312,49 @@ export const GameGenerator = () => {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Log de génération */}
+        {generationLog && (
+          <Card className="mb-8 border-green-200 bg-green-50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg text-green-800 flex items-center gap-2">
+                <CheckCircle className="h-5 w-5" />
+                Journal de Génération
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  {generationLog.apiCalled ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                  )}
+                  <span>Clé API appelée</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {generationLog.brandDataRetrieved ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-orange-600" />
+                  )}
+                  <span>Données marque récupérées</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {generationLog.allInputsUsed ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 text-orange-600" />
+                  )}
+                  <span>Tous les inputs utilisés</span>
+                </div>
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Génération terminée le {generationLog.timestamp}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {showPreview && generatedGame && (
           <GamePreview
